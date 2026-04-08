@@ -12,6 +12,44 @@ A command-line tool for managing an [Appmixer](https://appmixer.com) instance vi
 bun install
 ```
 
+## Usage
+
+### Via bun script
+
+```bash
+bun cli --help
+bun cli <command> [options]
+```
+
+### Via direct execution
+
+```bash
+bun src/index.ts --help
+bun src/index.ts <command> [options]
+```
+
+### Via compiled binary
+
+Build a standalone binary:
+
+```bash
+bun build src/index.ts --compile --outfile appmixer-adm
+```
+
+Then use it directly:
+
+```bash
+./appmixer-adm --help
+./appmixer-adm <command> [options]
+```
+
+To install it globally, move the binary to a directory in your PATH:
+
+```bash
+sudo mv appmixer-adm /usr/local/bin/
+appmixer-adm --help
+```
+
 ## Authentication
 
 Log in before running any other command. Credentials are stored securely in your system keychain.
