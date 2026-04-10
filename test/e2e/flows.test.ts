@@ -122,4 +122,37 @@ describe("flows e2e", () => {
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toContain("Updated flow-seed-2");
   });
+
+  test("flows apply --prune deletes remote flows missing locally", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flows-prune-"));
+    // Local folder has only seed1; seed2 should be pruned
+    const file = join(dir, "seed1.json");
+    await runCli("flows", "import", "flow-seed-1", "--output", file);
+
+    const result = await runCli("flows", "apply", dir, "--yes", "--prune", "--force");
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toContain("prune   flow-seed-2");
+    expect(result.stderr).toContain("Pruned flow-seed-2");
+
+    // Confirm: importing the pruned flow now fails
+    const missing = await runCli(
+      "flows",
+      "import",
+      "flow-seed-2",
+      "--output",
+      join(dir, "missing.json")
+    );
+    expect(missing.exitCode).toBe(1);
+  });
+
+  test("flows apply without --prune leaves remote-only flows alone", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flows-noprune-"));
+    const file = join(dir, "seed1.json");
+    await runCli("flows", "import", "flow-seed-1", "--output", file);
+
+    const result = await runCli("flows", "apply", dir, "--yes");
+    // Plan should be a single skip → "No changes" path, exit 0
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toContain("No changes.");
+  });
 });

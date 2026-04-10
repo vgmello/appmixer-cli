@@ -185,6 +185,25 @@ async function executeUpdates(
   return { successes, failures };
 }
 
+async function executePrunes(plan: Plan): Promise<ExecuteResult> {
+  let successes = 0;
+  let failures = 0;
+
+  for (const entry of plan.prunes) {
+    const spinner = ora(`Pruning ${entry.flowId} (${entry.name})`).start();
+    try {
+      await client.delete(`/flows/${encodeURIComponent(entry.flowId)}`);
+      spinner.succeed(`Pruned ${entry.flowId}`);
+      successes++;
+    } catch (err) {
+      spinner.fail(`Failed to prune ${entry.flowId}: ${(err as Error).message}`);
+      failures++;
+    }
+  }
+
+  return { successes, failures };
+}
+
 export function registerApply(flows: Command) {
   flows
     .command("apply")
@@ -222,9 +241,10 @@ export function registerApply(flows: Command) {
 
         const create = await executeCreates(plan);
         const update = await executeUpdates(plan, { force: opts.force });
+        const prune = await executePrunes(plan);
 
-        const successes = create.successes + update.successes;
-        const failures = create.failures + update.failures;
+        const successes = create.successes + update.successes + prune.successes;
+        const failures = create.failures + update.failures + prune.failures;
         const total = successes + failures;
         console.error(`\nDone: ${successes}/${total} succeeded`);
         if (failures > 0) process.exit(1);
