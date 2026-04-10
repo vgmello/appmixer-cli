@@ -1,7 +1,19 @@
+interface Flow {
+  flowId: string;
+  name: string;
+  flow: { components?: Record<string, unknown>; connections?: unknown[] };
+  userId: string;
+  sharedWith: Array<{ user: string; permissions: string[] }>;
+  stage: "stopped" | "running";
+  btime: number;
+  mtime: number;
+}
+
 interface Store {
   config: Array<{ key: string; value: unknown }>;
   serviceConfig: Array<Record<string, unknown>>;
   acl: Record<string, Array<Record<string, unknown>>>;
+  flows: Flow[];
 }
 
 const SEED_DATA: Store = {
@@ -21,14 +33,38 @@ const SEED_DATA: Store = {
       { role: "user", resource: "/api/*", action: ["read"], attributes: [] },
     ],
   },
+  flows: [
+    {
+      flowId: "flow-seed-1",
+      name: "Seed Flow One",
+      flow: { components: {}, connections: [] },
+      userId: "owner-user",
+      sharedWith: [{ user: "alice", permissions: ["read"] }],
+      stage: "stopped",
+      btime: 1000,
+      mtime: 1000,
+    },
+    {
+      flowId: "flow-seed-2",
+      name: "Seed Flow Two (running)",
+      flow: { components: {}, connections: [] },
+      userId: "owner-user",
+      sharedWith: [],
+      stage: "running",
+      btime: 2000,
+      mtime: 2000,
+    },
+  ],
 };
 
 const TEST_USER = { username: "admin@test.com", password: "test123" };
 
 let store: Store = structuredClone(SEED_DATA);
+let nextFlowId = 1000;
 
 export function resetStore() {
   store = structuredClone(SEED_DATA);
+  nextFlowId = 1000;
 }
 
 export function getStore(): Store {
@@ -126,6 +162,32 @@ function handleRequest(req: Request): Response {
     return Response.json({});
   }
 
+  // Flows routes
+  if (method === "GET" && path === "/flows") {
+    return Response.json(store.flows);
+  }
+  if (method === "POST" && path === "/flows") {
+    return handleFlowCreate(req);
+  }
+  if (method === "GET" && path.match(/^\/flows\/[^/]+$/)) {
+    const id = decodeURIComponent(path.slice("/flows/".length));
+    const found = store.flows.find((f) => f.flowId === id);
+    if (!found) return Response.json({ error: "Not found" }, { status: 404 });
+    return Response.json(found);
+  }
+  if (method === "PUT" && path.match(/^\/flows\/[^/]+$/)) {
+    return handleFlowUpdate(req, url, path);
+  }
+  if (method === "DELETE" && path.match(/^\/flows\/[^/]+$/)) {
+    const id = decodeURIComponent(path.slice("/flows/".length));
+    const before = store.flows.length;
+    store.flows = store.flows.filter((f) => f.flowId !== id);
+    if (store.flows.length === before) {
+      return Response.json({ error: "Not found" }, { status: 404 });
+    }
+    return Response.json({});
+  }
+
   return Response.json({ error: "Not found" }, { status: 404 });
 }
 
@@ -177,6 +239,47 @@ async function handleServiceConfigUpdate(req: Request, path: string): Promise<Re
   if (idx === -1) return Response.json({ error: "Not found" }, { status: 404 });
   store.serviceConfig[idx] = body;
   return Response.json(body);
+}
+
+async function handleFlowCreate(req: Request): Promise<Response> {
+  const body = (await req.json()) as Partial<Flow>;
+  const now = Date.now();
+  const created: Flow = {
+    flowId: `flow-${nextFlowId++}`,
+    name: body.name ?? "Untitled",
+    flow: body.flow ?? { components: {}, connections: [] },
+    userId: "owner-user",
+    sharedWith: [],
+    stage: "stopped",
+    btime: now,
+    mtime: now,
+  };
+  store.flows.push(created);
+  return Response.json(created);
+}
+
+async function handleFlowUpdate(req: Request, url: URL, path: string): Promise<Response> {
+  const id = decodeURIComponent(path.slice("/flows/".length));
+  const idx = store.flows.findIndex((f) => f.flowId === id);
+  if (idx === -1) return Response.json({ error: "Not found" }, { status: 404 });
+
+  const current = store.flows[idx]!;
+  const force = url.searchParams.get("forceUpdate") === "true";
+  if (current.stage === "running" && !force) {
+    return Response.json(
+      { error: "Flow is running. Pass forceUpdate=true." },
+      { status: 409 }
+    );
+  }
+
+  const body = (await req.json()) as Partial<Flow>;
+  store.flows[idx] = {
+    ...current,
+    name: body.name ?? current.name,
+    flow: body.flow ?? current.flow,
+    mtime: Date.now(),
+  };
+  return Response.json(store.flows[idx]);
 }
 
 export function startServer(port: number = 0) {
