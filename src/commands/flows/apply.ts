@@ -140,6 +140,51 @@ async function executeCreates(plan: Plan): Promise<ExecuteResult> {
   return { successes, failures };
 }
 
+async function executeUpdates(
+  plan: Plan,
+  options: ExecuteOptions
+): Promise<ExecuteResult> {
+  let successes = 0;
+  let failures = 0;
+
+  for (const entry of plan.updates) {
+    const id = String(entry.content.flowId);
+    const spinner = ora(`Updating ${entry.path} (${id})`).start();
+
+    if (entry.remote.stage === "running" && !options.force) {
+      spinner.fail(
+        `Skipped ${id}: flow is running. Re-run with --force to update running flows.`
+      );
+      failures++;
+      continue;
+    }
+
+    const body: Flow = { ...entry.content };
+    for (const field of PRESERVE_FROM_REMOTE) {
+      if (field in entry.remote) {
+        body[field] = entry.remote[field];
+      } else {
+        delete body[field];
+      }
+    }
+
+    const path = options.force
+      ? `/flows/${encodeURIComponent(id)}?forceUpdate=true`
+      : `/flows/${encodeURIComponent(id)}`;
+
+    try {
+      await client.put(path, body);
+      spinner.succeed(`Updated ${id}`);
+      successes++;
+    } catch (err) {
+      spinner.fail(`Failed to update ${id}: ${(err as Error).message}`);
+      failures++;
+    }
+  }
+
+  return { successes, failures };
+}
+
 export function registerApply(flows: Command) {
   flows
     .command("apply")
@@ -176,9 +221,13 @@ export function registerApply(flows: Command) {
         }
 
         const create = await executeCreates(plan);
-        const total = create.successes + create.failures;
-        console.error(`\nDone: ${create.successes}/${total} succeeded`);
-        if (create.failures > 0) process.exit(1);
+        const update = await executeUpdates(plan, { force: opts.force });
+
+        const successes = create.successes + update.successes;
+        const failures = create.failures + update.failures;
+        const total = successes + failures;
+        console.error(`\nDone: ${successes}/${total} succeeded`);
+        if (failures > 0) process.exit(1);
       } catch (err) {
         console.error(`Error: ${(err as Error).message}`);
         process.exit(1);

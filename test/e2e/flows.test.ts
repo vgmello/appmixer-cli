@@ -66,4 +66,60 @@ describe("flows e2e", () => {
     expect(after.flowId).toMatch(/^flow-/);
     expect(after.name).toBe("Brand new");
   });
+
+  test("flows apply updates an existing flow and preserves sharedWith", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flows-update-"));
+    const file = join(dir, "seed1.json");
+
+    // First import the seed flow
+    const importResult = await runCli("flows", "import", "flow-seed-1", "--output", file);
+    expect(importResult.exitCode).toBe(0);
+
+    // Edit the local copy: change name, blow away sharedWith locally
+    const local = JSON.parse(await Bun.file(file).text());
+    local.name = "Renamed Locally";
+    local.sharedWith = [];
+    await Bun.write(file, JSON.stringify(local, null, 2));
+
+    // Apply
+    const applyResult = await runCli("flows", "apply", dir, "--yes");
+    expect(applyResult.exitCode).toBe(0);
+    expect(applyResult.stderr).toContain("Updated flow-seed-1");
+
+    // Re-import to confirm: name changed, sharedWith preserved by server
+    const after = join(dir, "after.json");
+    await runCli("flows", "import", "flow-seed-1", "--output", after);
+    const imported = JSON.parse(await Bun.file(after).text());
+    expect(imported.name).toBe("Renamed Locally");
+    expect(imported.sharedWith).toEqual([{ user: "alice", permissions: ["read"] }]);
+  });
+
+  test("flows apply blocks updating a running flow without --force", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flows-running-"));
+    const file = join(dir, "seed2.json");
+    await runCli("flows", "import", "flow-seed-2", "--output", file);
+
+    const local = JSON.parse(await Bun.file(file).text());
+    local.name = "Trying to update";
+    await Bun.write(file, JSON.stringify(local, null, 2));
+
+    const result = await runCli("flows", "apply", dir, "--yes");
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("flow is running");
+    expect(result.stderr).toContain("--force");
+  });
+
+  test("flows apply with --force updates a running flow", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flows-force-"));
+    const file = join(dir, "seed2.json");
+    await runCli("flows", "import", "flow-seed-2", "--output", file);
+
+    const local = JSON.parse(await Bun.file(file).text());
+    local.name = "Forced update";
+    await Bun.write(file, JSON.stringify(local, null, 2));
+
+    const result = await runCli("flows", "apply", dir, "--yes", "--force");
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toContain("Updated flow-seed-2");
+  });
 });
