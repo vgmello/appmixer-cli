@@ -52,21 +52,47 @@ appmixer-adm --help
 
 ## Authentication
 
-Log in before running any other command. Credentials are stored securely in your system keychain.
+The CLI manages one or more named "contexts". Each context has a `baseUrl`, `username`, and (after login) a token. Contexts are stored in the OS keychain via `Bun.secrets`.
+
+Create a new context and log in:
 
 ```bash
-appmixer-adm login --base-url https://api.example.com --username admin --password secret
+appmixer-adm login --context prod --base-url https://api.example.com --username admin
 ```
 
-All three values can also come from environment variables:
+If `--password` is not given, the CLI reads `APPMIXER_PASSWORD` from the environment; if neither is set, it prompts interactively.
+
+Subsequent logins on the same context only need `--context <name>` and the password (via flag, env var, or prompt):
+
+```bash
+appmixer-adm login --context prod
+```
+
+Omitting `--context` uses the active context (whatever `appmixer-adm context current` prints).
+
+### Environment variables
 
 | Flag | Environment variable |
 |------|---------------------|
-| `--base-url <url>` | `APPMIXER_BASE_URL` |
-| `--username <username>` | `APPMIXER_USERNAME` |
+| `--base-url <url>` | `APPMIXER_BASE_URL` (used only when creating a new context) |
+| `--username <username>` | `APPMIXER_USERNAME` (used only when creating a new context) |
 | `--password <password>` | `APPMIXER_PASSWORD` |
 
-Flags take precedence over environment variables.
+The env var `APPMIXER_CONTEXT` overrides the active context for a single command without changing which context is active.
+
+### `context` commands
+
+```bash
+appmixer-adm context set <name> --base-url <url> --username <user>   # create/update
+appmixer-adm context use <name>                                       # switch active
+appmixer-adm context list                                             # list all
+appmixer-adm context current                                          # print active
+appmixer-adm context delete <name> [--yes]                            # remove
+```
+
+`context list` prints a table showing each context's base URL, username, and login status (`yes` / `expired` / `no`). The active context is marked with `*`.
+
+`context delete` prompts for confirmation unless `--yes` is passed; it refuses to run in a non-interactive shell without `--yes`.
 
 ## Commands
 
