@@ -3,8 +3,9 @@ import { Glob } from "bun";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import chalk from "chalk";
+import ora from "ora";
 import { client } from "../../client.ts";
-import { computePlan, type Flow, type Plan } from "./diff.ts";
+import { computePlan, type Flow, type Plan, PRESERVE_FROM_REMOTE } from "./diff.ts";
 import type { LocalFile } from "./diff.ts";
 
 export async function loadLocalFlows(directory: string): Promise<LocalFile[]> {
@@ -87,6 +88,58 @@ function isPlanEmpty(plan: Plan): boolean {
   );
 }
 
+interface ExecuteOptions {
+  force: boolean;
+}
+
+interface ExecuteResult {
+  successes: number;
+  failures: number;
+}
+
+async function executeCreates(plan: Plan): Promise<ExecuteResult> {
+  let successes = 0;
+  let failures = 0;
+
+  for (const entry of plan.creates) {
+    const label = entry.staleId
+      ? `Creating ${entry.path} (replacing stale ${entry.staleId})`
+      : `Creating ${entry.path}`;
+    const spinner = ora(label).start();
+
+    const body = { ...entry.content };
+    delete body.flowId;
+
+    try {
+      const created = (await client.post("/flows", body)) as Flow;
+      const newId = created.flowId;
+      if (typeof newId !== "string") {
+        throw new Error("Server response missing flowId");
+      }
+
+      const updatedFile = { ...entry.content, flowId: newId };
+      try {
+        await Bun.write(entry.path, JSON.stringify(updatedFile, null, 2) + "\n");
+      } catch (err) {
+        spinner.fail(
+          `Created flow ${newId} remotely but FAILED to write ${entry.path}: ${(err as Error).message}. ` +
+            `You must record this ID manually before re-running apply.`
+        );
+        failures++;
+        continue;
+      }
+
+      spinner.succeed(`Created ${entry.path} → ${newId}`);
+      successes++;
+    } catch (err) {
+      spinner.fail(`Failed to create ${entry.path}: ${(err as Error).message}`);
+      failures++;
+    }
+  }
+
+  return { successes, failures };
+}
+
 export function registerApply(flows: Command) {
   flows
     .command("apply")
@@ -122,9 +175,10 @@ export function registerApply(flows: Command) {
           }
         }
 
-        // Execution lands in the next task
-        console.error("(execution not yet implemented)");
-        process.exit(1);
+        const create = await executeCreates(plan);
+        const total = create.successes + create.failures;
+        console.error(`\nDone: ${create.successes}/${total} succeeded`);
+        if (create.failures > 0) process.exit(1);
       } catch (err) {
         console.error(`Error: ${(err as Error).message}`);
         process.exit(1);

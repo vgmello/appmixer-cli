@@ -47,4 +47,23 @@ describe("flows e2e", () => {
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain("non-interactive shell");
   });
+
+  test("flows apply creates a new flow and writes flowId back", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flows-create-"));
+    const file = join(dir, "new.json");
+    await Bun.write(
+      file,
+      JSON.stringify({ name: "Brand new", flow: { components: {} } }, null, 2)
+    );
+
+    const result = await runCli("flows", "apply", dir, "--yes");
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toContain("create  " + file);
+    expect(result.stderr).toContain("Created " + file);
+
+    const after = JSON.parse(await Bun.file(file).text());
+    expect(typeof after.flowId).toBe("string");
+    expect(after.flowId).toMatch(/^flow-/);
+    expect(after.name).toBe("Brand new");
+  });
 });
