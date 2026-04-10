@@ -5,7 +5,7 @@ import { createInterface } from "node:readline";
 import chalk from "chalk";
 import ora from "ora";
 import { client } from "../../client.ts";
-import { computePlan, type Flow, type Plan, PRESERVE_FROM_REMOTE } from "./diff.ts";
+import { computePlan, type Flow, type Plan, PRESERVE_FROM_REMOTE, STRIP_FOR_DIFF } from "./diff.ts";
 import type { LocalFile } from "./diff.ts";
 
 export async function loadLocalFlows(directory: string): Promise<LocalFile[]> {
@@ -160,11 +160,12 @@ async function executeUpdates(
     }
 
     const body: Flow = { ...entry.content };
+    for (const field of STRIP_FOR_DIFF) {
+      delete body[field];
+    }
     for (const field of PRESERVE_FROM_REMOTE) {
       if (field in entry.remote) {
         body[field] = entry.remote[field];
-      } else {
-        delete body[field];
       }
     }
 
