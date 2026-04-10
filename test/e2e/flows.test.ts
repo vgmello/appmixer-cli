@@ -37,4 +37,14 @@ describe("flows e2e", () => {
     expect(result.stderr).toContain("No changes.");
     expect(result.exitCode).toBe(0);
   });
+
+  test("flows apply refuses to run without --yes in a non-tty", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flows-tty-"));
+    // Author a brand-new flow so the plan is non-empty
+    await Bun.write(join(dir, "new.json"), JSON.stringify({ name: "fresh" }));
+
+    const result = await runCli("flows", "apply", dir);
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("non-interactive shell");
+  });
 });

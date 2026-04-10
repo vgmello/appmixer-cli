@@ -1,6 +1,7 @@
 import type { Command } from "@commander-js/extra-typings";
 import { Glob } from "bun";
 import { join } from "node:path";
+import { createInterface } from "node:readline";
 import chalk from "chalk";
 import { client } from "../../client.ts";
 import { computePlan, type Flow, type Plan } from "./diff.ts";
@@ -66,6 +67,18 @@ export function formatPlan(plan: Plan): string {
   return lines.join("\n");
 }
 
+async function confirm(question: string): Promise<boolean> {
+  const rl = createInterface({ input: process.stdin, output: process.stderr });
+  try {
+    const answer: string = await new Promise((resolve) => {
+      rl.question(`${question} `, resolve);
+    });
+    return /^y(es)?$/i.test(answer.trim());
+  } finally {
+    rl.close();
+  }
+}
+
 function isPlanEmpty(plan: Plan): boolean {
   return (
     plan.creates.length === 0 &&
@@ -93,6 +106,20 @@ export function registerApply(flows: Command) {
         if (isPlanEmpty(plan)) {
           console.error("No changes.");
           return;
+        }
+
+        if (!opts.yes) {
+          if (!process.stdin.isTTY) {
+            console.error(
+              "Error: refusing to run without --yes in a non-interactive shell."
+            );
+            process.exit(1);
+          }
+          const ok = await confirm("Apply these changes? [y/N]");
+          if (!ok) {
+            console.error("Aborted.");
+            return;
+          }
         }
 
         // Execution lands in the next task
