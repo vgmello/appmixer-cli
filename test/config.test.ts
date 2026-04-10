@@ -1,5 +1,5 @@
 import { test, expect, describe, beforeEach } from "bun:test";
-import { loadConfig, saveConfig, resetTestConfig } from "../src/config.ts";
+import { loadConfig, saveConfig, resetTestConfig, resolveContext } from "../src/config.ts";
 
 describe("loadConfig / saveConfig (in-memory test mode)", () => {
   beforeEach(() => {
@@ -72,5 +72,76 @@ describe("loadConfig / saveConfig (file-backed test mode)", () => {
   test("loadConfig throws a clear error on corrupt JSON", async () => {
     await Bun.write(process.env.APPMIXER_TEST_CONFIG!, "{not json");
     await expect(loadConfig()).rejects.toThrow(/corrupt/i);
+  });
+});
+
+describe("resolveContext", () => {
+  beforeEach(() => {
+    process.env.CLI_TEST_MODE = "true";
+    delete process.env.APPMIXER_TEST_CONFIG;
+    delete process.env.APPMIXER_CONTEXT;
+    resetTestConfig();
+  });
+
+  test("returns the context named by opts.context", async () => {
+    await saveConfig({
+      activeContext: "staging",
+      contexts: {
+        prod: { baseUrl: "p", username: "u" },
+        staging: { baseUrl: "s", username: "u" },
+      },
+    });
+    const { name, ctx } = await resolveContext({ context: "prod" });
+    expect(name).toBe("prod");
+    expect(ctx.baseUrl).toBe("p");
+  });
+
+  test("opts.context takes precedence over APPMIXER_CONTEXT env var", async () => {
+    await saveConfig({
+      activeContext: null,
+      contexts: {
+        a: { baseUrl: "a", username: "u" },
+        b: { baseUrl: "b", username: "u" },
+      },
+    });
+    process.env.APPMIXER_CONTEXT = "a";
+    const { name } = await resolveContext({ context: "b" });
+    expect(name).toBe("b");
+  });
+
+  test("APPMIXER_CONTEXT wins when opts.context is absent", async () => {
+    await saveConfig({
+      activeContext: "a",
+      contexts: {
+        a: { baseUrl: "a", username: "u" },
+        b: { baseUrl: "b", username: "u" },
+      },
+    });
+    process.env.APPMIXER_CONTEXT = "b";
+    const { name } = await resolveContext();
+    expect(name).toBe("b");
+  });
+
+  test("falls back to activeContext when nothing else is set", async () => {
+    await saveConfig({
+      activeContext: "a",
+      contexts: { a: { baseUrl: "a", username: "u" } },
+    });
+    const { name } = await resolveContext();
+    expect(name).toBe("a");
+  });
+
+  test("throws when nothing resolves", async () => {
+    await expect(resolveContext()).rejects.toThrow(/no active context/i);
+  });
+
+  test("throws when the requested context is missing", async () => {
+    await saveConfig({
+      activeContext: null,
+      contexts: { a: { baseUrl: "a", username: "u" } },
+    });
+    await expect(resolveContext({ context: "nope" })).rejects.toThrow(
+      /context 'nope' does not exist/i
+    );
   });
 });

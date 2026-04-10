@@ -73,3 +73,25 @@ export async function saveConfig(config: Config): Promise<void> {
 
   await secrets.set({ service: SERVICE, name: SECRET_NAME }, raw);
 }
+
+export async function resolveContext(
+  opts?: { context?: string }
+): Promise<{ name: string; ctx: Context }> {
+  const config = await loadConfig();
+  const requested = opts?.context ?? process.env.APPMIXER_CONTEXT ?? config.activeContext;
+
+  if (!requested) {
+    throw new Error(
+      "No active context. Run 'appmixer-adm login --context <name> --base-url <url> --username <user>' to create one."
+    );
+  }
+
+  const ctx = config.contexts[requested];
+  if (!ctx) {
+    const known = Object.keys(config.contexts);
+    const suffix = known.length ? ` Known contexts: ${known.join(", ")}.` : "";
+    throw new Error(`Context '${requested}' does not exist.${suffix}`);
+  }
+
+  return { name: requested, ctx };
+}
