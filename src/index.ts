@@ -16,29 +16,18 @@ program
 program
   .command("login")
   .description("Authenticate with an Appmixer instance")
-  .option("--username <username>", "Username (overrides APPMIXER_USERNAME)")
-  .option("--password <password>", "Password (overrides APPMIXER_PASSWORD)")
-  .option("--base-url <url>", "API base URL (overrides APPMIXER_BASE_URL)")
+  .option("--context <name>", "Context name (defaults to the active context)")
+  .option("--username <username>", "Username (required when creating a new context)")
+  .option("--password <password>", "Password (overrides APPMIXER_PASSWORD; prompts if neither is set)")
+  .option("--base-url <url>", "API base URL (required when creating a new context)")
   .action(async (opts) => {
-    const username = opts.username ?? process.env.APPMIXER_USERNAME;
-    const password = opts.password ?? process.env.APPMIXER_PASSWORD;
-    const baseUrl = opts.baseUrl ?? process.env.APPMIXER_BASE_URL;
-
-    if (!username) {
-      console.error("Error: --username or APPMIXER_USERNAME is required");
-      process.exit(1);
-    }
-    if (!password) {
-      console.error("Error: --password or APPMIXER_PASSWORD is required");
-      process.exit(1);
-    }
-    if (!baseUrl) {
-      console.error("Error: --base-url or APPMIXER_BASE_URL is required");
-      process.exit(1);
-    }
-
     try {
-      await login(baseUrl, username, password);
+      await login({
+        context: opts.context,
+        baseUrl: opts.baseUrl ?? process.env.APPMIXER_BASE_URL,
+        username: opts.username ?? process.env.APPMIXER_USERNAME,
+        password: opts.password,
+      });
     } catch (err) {
       console.error(`Error: ${(err as Error).message}`);
       process.exit(1);
