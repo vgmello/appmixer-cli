@@ -5,6 +5,7 @@ import { registerAcl } from "./commands/acl/index.ts";
 import { registerServiceConfig } from "./commands/service-config/index.ts";
 import { registerProvision } from "./commands/provision/index.ts";
 import { registerFlows } from "./commands/flows/index.ts";
+import { registerContext } from "./commands/context/index.ts";
 
 const program = new Command();
 
@@ -39,5 +40,6 @@ registerAcl(program);
 registerServiceConfig(program);
 registerProvision(program);
 registerFlows(program);
+registerContext(program);
 
 program.parse();
