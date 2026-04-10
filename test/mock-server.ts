@@ -60,6 +60,7 @@ const SEED_DATA: Store = {
 const TEST_USER = { username: "admin@test.com", password: "test123" };
 
 let store: Store = structuredClone(SEED_DATA);
+let nextFlowId = 1000;
 
 export function resetStore() {
   store = structuredClone(SEED_DATA);
@@ -239,8 +240,6 @@ async function handleServiceConfigUpdate(req: Request, path: string): Promise<Re
   store.serviceConfig[idx] = body;
   return Response.json(body);
 }
-
-let nextFlowId = 1000;
 
 async function handleFlowCreate(req: Request): Promise<Response> {
   const body = (await req.json()) as Partial<Flow>;
