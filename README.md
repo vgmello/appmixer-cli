@@ -157,6 +157,30 @@ Export the current server state as YAML provisioning files. Writes `config.yaml`
 appmixer-adm provision import <directory>
 ```
 
+### `flows apply`
+
+Reconcile a folder of flow JSON files against the server. Each `*.json` file in the folder describes one flow; the file's `flowId` field identifies it remotely. Files without a `flowId` are created on first apply and the assigned ID is written back to disk.
+
+```bash
+appmixer-adm flows apply <directory> [options]
+```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--prune` | Delete remote flows that have no local file | off |
+| `--force` | Allow updating flows whose `stage` is `running` | off |
+| `--yes` | Skip the confirmation prompt | off |
+
+The command prints a plan (creates, updates, prunes, skips) and prompts for confirmation. In a non-interactive shell `--yes` is required. The fields `mtime`, `btime`, `stage`, `userId`, and `sharedWith` are ignored when diffing; `userId` and `sharedWith` are always taken from the server on update so ownership and sharing cannot be changed through `apply`.
+
+### `flows import`
+
+Fetch a single flow from the server and write it to a JSON file. Use this to refresh a local copy after editing through the Appmixer UI.
+
+```bash
+appmixer-adm flows import <flowId> --output <file>
+```
+
 ## Provisioning file format
 
 YAML files use kebab-case keys. The CLI converts them to camelCase before sending to the API (and vice versa on import). A provisioning directory can contain any combination of these top-level keys across one or more files:
