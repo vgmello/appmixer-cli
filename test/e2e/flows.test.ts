@@ -29,4 +29,12 @@ describe("flows e2e", () => {
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain("Failed to import no-such-flow");
   });
+
+  test("flows apply prints a plan and exits 'No changes' when synced", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "flows-plan-"));
+    const result = await runCli("flows", "apply", dir, "--yes");
+    // Empty local + no --prune means everything is a no-op
+    expect(result.stderr).toContain("No changes.");
+    expect(result.exitCode).toBe(0);
+  });
 });
