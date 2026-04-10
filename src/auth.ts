@@ -51,7 +51,7 @@ async function resolveLoginContext(
 
 async function resolvePassword(opts: LoginOptions): Promise<string> {
   if (opts.password) return opts.password;
-  const envPassword = process.env.APPMIXER_PASSWORD ?? process.env.APPMIXER_TEST_PASSWORD;
+  const envPassword = process.env.APPMIXER_PASSWORD;
   if (envPassword) return envPassword;
   return promptPassword("Password:");
 }
