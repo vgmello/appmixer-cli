@@ -1,10 +1,13 @@
 import { beforeAll, afterAll, beforeEach } from "bun:test";
 import { startServer, resetStore } from "../mock-server.ts";
 import { join } from "node:path";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
 
 let serverInfo: { port: number; stop: () => void };
 let testToken: string;
 let testBaseUrl: string;
+let testConfigPath: string;
 
 export function setupMockServer() {
   beforeAll(async () => {
@@ -27,6 +30,8 @@ export function setupMockServer() {
 
   beforeEach(() => {
     resetStore();
+    const dir = mkdtempSync(join(tmpdir(), "cli-cfg-"));
+    testConfigPath = join(dir, "config.json");
   });
 }
 
@@ -36,6 +41,10 @@ export function getPort(): number {
 
 export function getBaseUrl(): string {
   return testBaseUrl;
+}
+
+export function getTestConfigPath(): string {
+  return testConfigPath;
 }
 
 export async function runCli(...args: string[]): Promise<{
@@ -49,6 +58,7 @@ export async function runCli(...args: string[]): Promise<{
       CLI_TEST_MODE: "true",
       APPMIXER_TOKEN: testToken,
       APPMIXER_BASE_URL: testBaseUrl,
+      APPMIXER_TEST_CONFIG: testConfigPath,
     },
     stdout: "pipe",
     stderr: "pipe",
@@ -71,6 +81,8 @@ export async function runLoginCli(...args: string[]): Promise<{
   const proc = Bun.spawn(["bun", join(import.meta.dir, "../../src/index.ts"), ...args], {
     env: {
       ...process.env,
+      CLI_TEST_MODE: "true",
+      APPMIXER_TEST_CONFIG: testConfigPath,
       APPMIXER_BASE_URL: testBaseUrl,
     },
     stdout: "pipe",

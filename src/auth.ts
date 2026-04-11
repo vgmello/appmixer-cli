@@ -1,7 +1,6 @@
-import { secrets } from "bun";
 import chalk from "chalk";
-
-const SERVICE = "appmixer-adm";
+import { loadConfig, saveConfig, resolveContext } from "./config.ts";
+import { promptPassword } from "./prompts.ts";
 
 interface JwtPayload {
   username: string;
@@ -18,7 +17,49 @@ export function decodeJwt(token: string): JwtPayload {
   return payload as JwtPayload;
 }
 
-export async function login(baseUrl: string, username: string, password: string): Promise<void> {
+export interface LoginOptions {
+  context?: string;
+  baseUrl?: string;
+  username?: string;
+  password?: string;
+}
+
+async function resolveLoginContext(
+  opts: LoginOptions
+): Promise<{ name: string; baseUrl: string; username: string }> {
+  const config = await loadConfig();
+
+  const requested = opts.context ?? config.activeContext;
+  if (!requested) {
+    throw new Error(
+      "No active context. Run 'appmixer-adm login --context <name> --base-url <url> --username <user>' to create one."
+    );
+  }
+
+  const existing = config.contexts[requested];
+  if (existing) {
+    return { name: requested, baseUrl: existing.baseUrl, username: existing.username };
+  }
+
+  if (!opts.baseUrl || !opts.username) {
+    throw new Error(
+      `Context '${requested}' does not exist. Pass --base-url and --username to create it.`
+    );
+  }
+  return { name: requested, baseUrl: opts.baseUrl, username: opts.username };
+}
+
+async function resolvePassword(opts: LoginOptions): Promise<string> {
+  if (opts.password) return opts.password;
+  const envPassword = process.env.APPMIXER_PASSWORD;
+  if (envPassword) return envPassword;
+  return promptPassword("Password:");
+}
+
+export async function login(opts: LoginOptions): Promise<void> {
+  const { name, baseUrl, username } = await resolveLoginContext(opts);
+  const password = await resolvePassword(opts);
+
   const response = await fetch(`${baseUrl}/user/auth`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -32,17 +73,21 @@ export async function login(baseUrl: string, username: string, password: string)
 
   const data = await response.json();
   const token = data.token as string;
-
-  try {
-    await secrets.set({ service: SERVICE, name: `token:${baseUrl}` }, token);
-    await secrets.set({ service: SERVICE, name: `username:${baseUrl}` }, username);
-    await secrets.set({ service: SERVICE, name: "base-url" }, baseUrl);
-  } catch (err) {
-    console.error(chalk.yellow(`Warning: could not store credentials in keychain: ${(err as Error).message}`));
-  }
-
   const payload = decodeJwt(token);
-  console.error(chalk.green(`Logged in as ${payload.username} (${baseUrl})`));
+
+  const config = await loadConfig();
+  config.contexts[name] = {
+    baseUrl,
+    username,
+    token,
+    tokenExp: payload.exp,
+  };
+  if (!config.activeContext) {
+    config.activeContext = name;
+  }
+  await saveConfig(config);
+
+  console.error(chalk.green(`Logged in as ${username} (${baseUrl}) [context: ${name}]`));
 }
 
 export async function getSession(): Promise<{
@@ -50,13 +95,14 @@ export async function getSession(): Promise<{
   baseUrl: string;
   username: string;
 }> {
-  // Test mode: read from environment variables
-  if (process.env.CLI_TEST_MODE === "true") {
+  // Legacy test-mode shortcut: preserves existing runCli test behavior.
+  if (
+    process.env.CLI_TEST_MODE === "true" &&
+    process.env.APPMIXER_TOKEN &&
+    process.env.APPMIXER_BASE_URL
+  ) {
     const token = process.env.APPMIXER_TOKEN;
     const baseUrl = process.env.APPMIXER_BASE_URL;
-    if (!token || !baseUrl) {
-      throw new Error("Session expired. Run `appmixer-adm login` first.");
-    }
     const payload = decodeJwt(token);
     const now = Math.floor(Date.now() / 1000);
     if (payload.exp <= now) {
@@ -65,23 +111,13 @@ export async function getSession(): Promise<{
     return { token, baseUrl, username: payload.username };
   }
 
-  // Normal mode: read from Bun.secrets
-  const baseUrl = await secrets.get({ service: SERVICE, name: "base-url" });
-  if (!baseUrl) {
+  const { ctx } = await resolveContext();
+  if (!ctx.token || !ctx.tokenExp) {
     throw new Error("Session expired. Run `appmixer-adm login` first.");
   }
-
-  const token = await secrets.get({ service: SERVICE, name: `token:${baseUrl}` });
-  if (!token) {
-    throw new Error("Session expired. Run `appmixer-adm login` first.");
-  }
-
-  const payload = decodeJwt(token);
   const now = Math.floor(Date.now() / 1000);
-  if (payload.exp <= now) {
+  if (ctx.tokenExp <= now) {
     throw new Error("Session expired. Run `appmixer-adm login` first.");
   }
-
-  const username = (await secrets.get({ service: SERVICE, name: `username:${baseUrl}` })) ?? payload.username;
-  return { token, baseUrl, username };
+  return { token: ctx.token, baseUrl: ctx.baseUrl, username: ctx.username };
 }
