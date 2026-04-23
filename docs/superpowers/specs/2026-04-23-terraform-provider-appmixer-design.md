@@ -75,10 +75,25 @@ provider "appmixer" {
 Multi-tenant setups use standard Terraform provider aliasing:
 
 ```hcl
-provider "appmixer" { alias = "prod"; base_url = "..."; username = "..."; password = "..." }
-provider "appmixer" { alias = "staging"; base_url = "..."; username = "..."; password = "..." }
+provider "appmixer" {
+  alias    = "prod"
+  base_url = "https://api.prod.appmixer.cloud"
+  username = var.prod_username
+  password = var.prod_password
+}
 
-resource "appmixer_config" "jwt" { provider = appmixer.prod; ... }
+provider "appmixer" {
+  alias    = "staging"
+  base_url = "https://api.staging.appmixer.cloud"
+  username = var.staging_username
+  password = var.staging_password
+}
+
+resource "appmixer_config" "prod_jwt" {
+  provider = appmixer.prod
+  key      = "JWTSecret"
+  value    = var.prod_jwt_secret
+}
 ```
 
 ### HTTP client
@@ -90,7 +105,7 @@ Plain `net/http`, JSON-encoded, no third-party HTTP library. Responsibilities:
 - 2xx validation
 - JSON decode
 - Structured error from non-2xx (status code, body, request path, method)
-- No retries — Terraform already retries at the resource layer via diagnostics
+- No automatic retries in MVP. Transient 5xx fails the resource operation and the operator retries at the `terraform apply` level. Revisit if the 5xx rate becomes noisy.
 
 Shape mirrors `src/client.ts` from this repo. Generic helpers per verb:
 
@@ -145,8 +160,21 @@ resource "appmixer_acl" "components" {
 }
 
 resource "appmixer_modifiers" "default" {
-  categories = { object = { label = "Object", index = 1 } }
-  modifiers  = { g_stringify = jsonencode({ name = "stringify", ... }) }
+  categories = {
+    object = { label = "Object", index = 1 }
+    list   = { label = "List", index = 2 }
+  }
+  modifiers = {
+    g_stringify = jsonencode({
+      name        = "stringify"
+      label       = "Stringify"
+      category    = ["object", "list"]
+      description = "Convert an object or list to a JSON string."
+      arguments   = [{ name = "space", type = "number", isHash = true }]
+      returns     = { type = "string" }
+      helperFn    = "function(value, { hash }) { return JSON.stringify(value, null, hash.space); }"
+    })
+  }
 }
 
 resource "appmixer_flow" "onboarding" {
@@ -158,7 +186,10 @@ resource "appmixer_flow" "onboarding" {
 resource "appmixer_account" "slack_bot" {
   service      = "appmixer:slack"
   display_name = "Platform Slack Bot"
-  token        = jsonencode({ accessToken = var.slack_token, scope = [...] })  # sensitive
+  token = jsonencode({
+    accessToken = var.slack_token
+    scope       = ["channels:read", "chat:write:user"]
+  })  # sensitive
 }
 
 resource "appmixer_user" "admin_ops" {
@@ -273,7 +304,7 @@ Run with `go test ./...`, fast, no external deps.
 
 Gated behind `TF_ACC=1` so `go test ./...` doesn't spin up the backend.
 
-`TestMain` spawns `test/mock-server.ts` from this repo as a subprocess on a random port, waits for health, sets `APPMIXER_BASE_URL` / `APPMIXER_USERNAME` / `APPMIXER_PASSWORD`, then invokes the test runner. The mock-server source is either vendored into the provider repo or referenced via a git submodule — decided during implementation based on release timing.
+`TestMain` spawns the mock server as a subprocess on a random port, waits for health, sets `APPMIXER_BASE_URL` / `APPMIXER_USERNAME` / `APPMIXER_PASSWORD`, then invokes the test runner. The mock server lives in the provider repo (copied from `test/mock-server.ts` in this repo during initial scaffolding and extended with the four additional domains below). Copy, not submodule — keeps the provider repo buildable without cross-repo coupling. Drift between the two copies is acceptable; when the API shape changes, both repos update in lockstep.
 
 ### Mock-server coverage gaps
 
